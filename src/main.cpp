@@ -15,9 +15,11 @@ using namespace std;
 // for convenience
 using json = nlohmann::json;
 
-const double LANE_WIDTH = 4.0;
+const double LANE_WIDTH = 4.0; //meters
 const double TIME_INC = 0.02; //sec. How often car expects points
-const double TARGET_SPEED = 48 * 1609.34 / 3600; //50mph to m/s
+const double TARGET_SPEED = 49.5 * 1609.34 / 3600; //50mph to m/s
+
+void planTrajectory();
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -251,116 +253,12 @@ int main() {
 
           int lane = 1;
 
-          vector<double> pts_x {};
-          vector<double> pts_y {};
-          double ref_yaw = car_yaw;
-          if (!previous_path_x.empty()) {
-            int prev_pts_cnt = 3;
-            std::cout << "Preparing pts for spline cnt=" << prev_pts_cnt << std::endl;
-            for (int i = previous_path_x.size() - prev_pts_cnt; i < previous_path_x.size(); ++i) {
-              pts_x.push_back(previous_path_x[i]);
-              pts_y.push_back(previous_path_y[i]);
-            }
+          auto next = planTrajectory(car_x, car_y, car_yaw, lane, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
-            unsigned long pts_size = pts_x.size();
-            ref_yaw = atan2(pts_y[pts_size-1] - pts_y[pts_size-2], pts_x[pts_size-1] - pts_x[pts_size-2]);
-          } else {
-            pts_x.push_back(car_x - cos(car_yaw));
-            pts_y.push_back(car_y - sin(car_yaw));
-
-            pts_x.push_back(car_x);
-            pts_y.push_back(car_y);
-            ref_yaw = car_yaw;
-          }
-
-          double ref_x = pts_x[pts_x.size() - 1];
-          double ref_y = pts_y[pts_y.size() - 1];
-
-          double next_d = lane * LANE_WIDTH + 0.5 * LANE_WIDTH;
-          vector<double> ref_frenet = getFrenet(ref_x, ref_y, car_yaw, map_waypoints_x, map_waypoints_y);
-
-          for (int i = 1; i < 4; i++) {
-            double next_s = ref_frenet[0] + i * 30;
-            vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            pts_x.push_back(xy[0]);
-            pts_y.push_back(xy[1]);
-          }
-
-          std::cout << "Real coord spline: ";
-          for (int i = 0; i < pts_x.size(); ++i) {
-            std::cout << "(" << pts_x[i] << "," << pts_y[i] << ")";
-          }
-          std::cout << std::endl;
-
-
-          //show me pre-spline pts
-//          std::cout << "Car coord spline, (" << ref_x << "," << ref_y << ") =(";
-          for (int k = 0; k < pts_x.size(); ++k) {
-            double x_new = (pts_x[k] - ref_x)*cos(-ref_yaw) - (pts_y[k] - ref_y)*sin(-ref_yaw);
-            double y_new = (pts_x[k] - ref_x)*sin(-ref_yaw) + (pts_y[k] - ref_y)*cos(-ref_yaw);
-
-            pts_x[k] = x_new;
-            pts_y[k] = y_new;
-//            std::cout << "(" << pts_x[k] << "," << pts_y[k] << ")";
-          }
-//          std::cout << ")" << std::endl;
-
-          tk::spline s;
-          s.set_points(pts_x, pts_y);
-
-          //add previous points
-//          std::cout << "Previous path: ";
-          for (int i = 0; i < previous_path_x.size(); ++i) {
-            next_x_vals.push_back(previous_path_x[i]);
-            next_y_vals.push_back(previous_path_y[i]);
-
-//            std::cout << "(" << previous_path_x[i] << "," << previous_path_y[i] << ")";
-          }
-//          std::cout << std::endl;
-
-          // add points based on spline
-          double dst_x = 30;
-          double dst_y = s(dst_x);
-          double dst_dist = distance(0, 0,  dst_x, dst_y);
-//          std::cout << "Heading to (car coords): (" << dst_x << "," << dst_y << ") distance=" << dst_dist << std::endl;
-
-          unsigned long time_steps = 50 - previous_path_x.size();//(int) (dst_dist / TARGET_SPEED * TIME_INC);
-          double N = dst_dist / (TARGET_SPEED*TIME_INC);
-          double x_inc = dst_x / N;
-          std::cout << "spline pts: inc=" << x_inc << ", dist=" << dst_dist << ", steps=" << time_steps <<
-                    ", N=" << N <<";" << std::endl << "[";
-          for (int i = 1; i <= time_steps; ++i) {
-
-            double pt_x = x_inc * i;
-            double pt_y = s(pt_x);
-
-//            std::cout << "s(" << pt_x << "," << pt_y << ")";
-            double x_new = ref_x + (pt_x*cos(ref_yaw) - pt_y*sin(ref_yaw));
-            double y_new = ref_y + (pt_x*sin(ref_yaw) + pt_y*cos(ref_yaw));
-
-            next_x_vals.push_back(x_new);
-            next_y_vals.push_back(y_new);
-
-            cout << "(" << x_new << "," << y_new << ") # ";
-          }
-          std::cout << "]" << std::endl;
-
-//
-//          for(int i = 0; i < 50; i++)
-//          {
-//
-//            double next_s = car_s + dist_inc*(i + 1);
-//            double next_d = ;
-//
-//            vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-//
-//            next_x_vals.push_back(xy[0]);
-//            next_y_vals.push_back(xy[1]);
-//          }
 
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
+          msgJson["next_x"] = next[0];
+          msgJson["next_y"] = next[1];
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
@@ -408,4 +306,108 @@ int main() {
     return -1;
   }
   h.run();
+}
+
+vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane,
+                                      vector<double> &previous_path_x, vector<double> &previous_path_y,
+                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y, vector<double> &map_waypoints_s) {
+  vector<double> next_x_vals;
+  vector<double> next_y_vals;
+
+
+  vector<double> pts_x {};
+  vector<double> pts_y {};
+  double ref_yaw = car_yaw;
+  if (!previous_path_x.empty()) {
+    int prev_pts_cnt = 3;
+    cout << "Preparing pts for spline cnt=" << prev_pts_cnt << endl;
+    for (auto i = previous_path_x.size() - prev_pts_cnt; i < previous_path_x.size(); ++i) {
+      pts_x.push_back(previous_path_x[i]);
+      pts_y.push_back(previous_path_y[i]);
+    }
+
+    unsigned long pts_size = pts_x.size();
+    ref_yaw = atan2(pts_y[pts_size-1] - pts_y[pts_size-2], pts_x[pts_size-1] - pts_x[pts_size-2]);
+  } else {
+    pts_x.push_back(car_x - cos(car_yaw));
+    pts_y.push_back(car_y - sin(car_yaw));
+
+    pts_x.push_back(car_x);
+    pts_y.push_back(car_y);
+    ref_yaw = car_yaw;
+  }
+
+  double ref_x = pts_x[pts_x.size() - 1];
+  double ref_y = pts_y[pts_y.size() - 1];
+
+  double next_d = lane * LANE_WIDTH + 0.5 * LANE_WIDTH;
+  vector<double> ref_frenet = getFrenet(ref_x, ref_y, car_yaw, map_waypoints_x, map_waypoints_y);
+
+  for (int i = 1; i < 4; i++) {
+    double next_s = ref_frenet[0] + i * 30;
+    vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+    pts_x.push_back(xy[0]);
+    pts_y.push_back(xy[1]);
+  }
+
+  cout << "Real coord spline: ";
+  for (int i = 0; i < pts_x.size(); ++i) {
+    cout << "(" << pts_x[i] << "," << pts_y[i] << ")";
+  }
+  cout << endl;
+
+
+  //show me pre-spline pts
+//          std::cout << "Car coord spline, (" << ref_x << "," << ref_y << ") =(";
+  for (int k = 0; k < pts_x.size(); ++k) {
+    double x_new = (pts_x[k] - ref_x)*cos(-ref_yaw) - (pts_y[k] - ref_y)*sin(-ref_yaw);
+    double y_new = (pts_x[k] - ref_x)*sin(-ref_yaw) + (pts_y[k] - ref_y)*cos(-ref_yaw);
+
+    pts_x[k] = x_new;
+    pts_y[k] = y_new;
+//            std::cout << "(" << pts_x[k] << "," << pts_y[k] << ")";
+  }
+//          std::cout << ")" << std::endl;
+
+  tk::spline s;
+  s.set_points(pts_x, pts_y);
+
+  //add previous points
+//          std::cout << "Previous path: ";
+  for (int i = 0; i < previous_path_x.size(); ++i) {
+    next_x_vals.push_back(previous_path_x[i]);
+    next_y_vals.push_back(previous_path_y[i]);
+
+//            std::cout << "(" << previous_path_x[i] << "," << previous_path_y[i] << ")";
+  }
+//          std::cout << std::endl;
+
+  // add points based on spline
+  double dst_x = 30;
+  double dst_y = s(dst_x);
+  double dst_dist = distance(0, 0,  dst_x, dst_y);
+//          std::cout << "Heading to (car coords): (" << dst_x << "," << dst_y << ") distance=" << dst_dist << std::endl;
+
+  unsigned long time_steps = 50 - previous_path_x.size();//(int) (dst_dist / TARGET_SPEED * TIME_INC);
+  double N = dst_dist / (TARGET_SPEED*TIME_INC);
+  double x_inc = dst_x / N;
+  cout << "spline pts: inc=" << x_inc << ", dist=" << dst_dist << ", steps=" << time_steps <<
+       ", N=" << N <<";" << endl << "[";
+  for (int i = 1; i <= time_steps; ++i) {
+
+    double pt_x = x_inc * i;
+    double pt_y = s(pt_x);
+
+//            std::cout << "s(" << pt_x << "," << pt_y << ")";
+    double x_new = ref_x + (pt_x*cos(ref_yaw) - pt_y*sin(ref_yaw));
+    double y_new = ref_y + (pt_x*sin(ref_yaw) + pt_y*cos(ref_yaw));
+
+    next_x_vals.push_back(x_new);
+    next_y_vals.push_back(y_new);
+
+    cout << "(" << x_new << "," << y_new << ") # ";
+  }
+  cout << "]" << endl;
+
+  return {next_x_vals, next_y_vals};
 }
