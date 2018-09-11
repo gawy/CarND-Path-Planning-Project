@@ -19,7 +19,9 @@ const double LANE_WIDTH = 4.0; //meters
 const double TIME_INC = 0.02; //sec. How often car expects points
 const double TARGET_SPEED = 49.5 * 1609.34 / 3600; //50mph to m/s
 
-void planTrajectory();
+vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane,
+                                      vector<double> &previous_path_x, vector<double> &previous_path_y,
+                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y, vector<double> &map_waypoints_s);
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -219,13 +221,14 @@ int main() {
       auto s = hasData(data);
 
       if (s != "") {
+        std::cout << s << std::endl;
         auto j = json::parse(s);
         
         string event = j[0].get<string>();
         
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
+
         	// Main car's localization Data
           double car_x = j[1]["x"];
           double car_y = j[1]["y"];
@@ -249,11 +252,19 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
+          vector<double> prev_x;
+          vector<double> prev_y;
+          for (int i = 0; i < previous_path_x.size(); ++i) {
+            prev_x.push_back(previous_path_x[i]);
+            prev_y.push_back(previous_path_y[i]);
+          }
+
           //NEW:
 
           int lane = 1;
 
-          auto next = planTrajectory(car_x, car_y, car_yaw, lane, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
+
+          auto next = planTrajectory(car_x, car_y, car_yaw, lane, prev_x, prev_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
 
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
@@ -264,7 +275,7 @@ int main() {
 
           //this_thread::sleep_for(chrono::milliseconds(1000));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
+
         }
       } else {
         // Manual driving
