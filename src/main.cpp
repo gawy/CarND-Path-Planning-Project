@@ -17,11 +17,15 @@ using json = nlohmann::json;
 
 const double LANE_WIDTH = 4.0; //meters
 const double TIME_INC = 0.02; //sec. How often car expects points
-const double TARGET_SPEED = 49.5 * 1609.34 / 3600; //50mph to m/s
+const double IDEAL_VELOCITY = 49.5 * 1609.34 / 3600; //50mph to m/s
 
-vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane,
+// The max s value before wrapping around the track back to 0
+const double max_s = 6945.554;
+
+vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane, double target_velocity,
                                       vector<double> &previous_path_x, vector<double> &previous_path_y,
-                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y, vector<double> &map_waypoints_s);
+                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y,
+                                      vector<double> &map_waypoints_s);
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -184,8 +188,10 @@ int main() {
 
   // Waypoint map to read from
   string map_file_ = "../data/highway_map.csv";
-  // The max s value before wrapping around the track back to 0
-  double max_s = 6945.554;
+
+  int lane = 1;
+  double target_velocity = 0.0;
+
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -209,7 +215,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane,&target_velocity](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -221,7 +227,7 @@ int main() {
       auto s = hasData(data);
 
       if (s != "") {
-        std::cout << s << std::endl;
+//        std::cout << s << std::endl;
         auto j = json::parse(s);
         
         string event = j[0].get<string>();
@@ -261,10 +267,46 @@ int main() {
 
           //NEW:
 
-          int lane = 1;
+          // check for cars in front
+          bool drone_too_close = false;
+          double close_drone_velocity = 0.0;
+          double close_drone_distance = 1000.0;
+          double safe_distance = 30.0;
+          for (int i = 0; i < sensor_fusion.size(); ++i) {
+            auto drone = sensor_fusion[i];
+            double drone_d = drone[6];
 
+            if (drone_d > lane * LANE_WIDTH && drone_d < LANE_WIDTH * (lane + 1)) {
+              //this car is in our lane
+              double drone_s = (double)drone[5];
+              double drone_dist = abs(drone_s - car_s);
+              if (car_s < max_s - 2*safe_distance && drone_s < 2*safe_distance) {
+                drone_dist = drone_s + max_s - car_s;
+              }
 
-          auto next = planTrajectory(car_x, car_y, car_yaw, lane, prev_x, prev_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
+              if (drone_dist < safe_distance && drone_dist < close_drone_distance) {
+                drone_too_close = true;
+                close_drone_distance = drone_dist;
+                double drone_vx = drone[3];
+                double drone_vy = drone[4];
+                close_drone_velocity = sqrt(drone_vx*drone_vx + drone_vy*drone_vy);
+                std::cout << "Drone too close " << drone[0] << ", dist=" << drone_dist
+                          << ", drone_s=" << (double)drone[5] << ", drone_d=" << drone_d << ", car_s=" << car_s
+                          << ", drone_v=" << close_drone_velocity << std::endl;
+              }
+            }
+          }
+
+          if (drone_too_close && (close_drone_distance < safe_distance - 10 || target_velocity > close_drone_velocity)) {
+            target_velocity -= .224;
+            std::cout << "Dec velocity to: " << target_velocity << ", drone_v=" << close_drone_velocity << std::endl;
+          } else if (target_velocity < IDEAL_VELOCITY) {
+            target_velocity += .224;
+            std::cout << "Inc velocity to: " << target_velocity << std::endl;
+          }
+
+          auto next = planTrajectory(car_x, car_y, car_yaw, lane, target_velocity, prev_x, prev_y, map_waypoints_x, map_waypoints_y,
+                                     map_waypoints_s);
 
 
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
@@ -319,9 +361,10 @@ int main() {
   h.run();
 }
 
-vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane,
+vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw, int lane, double target_velocity,
                                       vector<double> &previous_path_x, vector<double> &previous_path_y,
-                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y, vector<double> &map_waypoints_s) {
+                                      vector<double> &map_waypoints_x, vector<double> &map_waypoints_y,
+                                      vector<double> &map_waypoints_s) {
   vector<double> next_x_vals;
   vector<double> next_y_vals;
 
@@ -400,7 +443,7 @@ vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw
 //          std::cout << "Heading to (car coords): (" << dst_x << "," << dst_y << ") distance=" << dst_dist << std::endl;
 
   unsigned long time_steps = 50 - previous_path_x.size();//(int) (dst_dist / TARGET_SPEED * TIME_INC);
-  double N = dst_dist / (TARGET_SPEED*TIME_INC);
+  double N = dst_dist / (target_velocity * TIME_INC);
   double x_inc = dst_x / N;
   cout << "spline pts: inc=" << x_inc << ", dist=" << dst_dist << ", steps=" << time_steps <<
        ", N=" << N <<";" << endl << "[";
