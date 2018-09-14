@@ -197,7 +197,11 @@ int main() {
             int new_lane = lane + lane_direction[bh_state];
             // generate trajectory
             // calculate cost of the trajectory
-            double c = costSpeed(new_lane, car_s, sensor_fusion) + 0.1 * abs(new_lane - lane);
+            double lateral_disp_cost = (new_lane * LANE_WIDTH + 0.5 * LANE_WIDTH - car_d) / LANE_WIDTH;
+            lateral_disp_cost = tanh(0.3*lateral_disp_cost*lateral_disp_cost*lateral_disp_cost);
+
+            double c = costSpeed(new_lane, car_s, sensor_fusion) + 2 * lateral_disp_cost
+                       + 1.5 * costDistance(new_lane, car_s, sensor_fusion);
             cost.push_back(c);
             cout << "";
             printState(bh_state);

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <math.h>
 #include "spline.h"
+#include <limits>
 
 
 using namespace std;
@@ -76,23 +77,47 @@ map<int, double> getLaneAvgSpeed(vector<vector<double >> &sensor_fusion, double 
     }
   }
 
-  cout << "Lane average speed: ";
+//  cout << "Lane average speed: ";
   for(auto k : lane_average) {
     lane_average[k.first] /= lane_cnt[k.first];
-    cout << "{"<< k.first << "=" << lane_average[k.first] << "}";
+//    cout << "{"<< k.first << "=" << lane_average[k.first] << "}";
   }
-  cout << endl;
+//  cout << endl;
 
   return lane_average;
 }
 
-// Calculate cost of going to specific lane based speed
+// Calculate cost of going to specific lane based on average speed in target lane
 double costSpeed(int lane, double car_s, vector<vector<double >> &sensor_fusion) {
   map<int, double> avg_speed = getLaneAvgSpeed(sensor_fusion, car_s);
 
   double speed_delta = avg_speed[lane] ? IDEAL_VELOCITY - avg_speed[lane]: 0.0;
 
   return 1 - exp(-2*speed_delta/IDEAL_VELOCITY);
+}
+
+// Calculate cost of going to specific lane based on how far we can get till next drone in target lane
+double costDistance(int lane, double car_s, vector<vector<double >> &sensor_fusion) {
+  double distance_in_lane = 999.9; //just a large number that is suposedly is bigger than any object in sensor fusion array
+  double s_safe_delta = 5.0;
+
+  for (int i = 0; i < sensor_fusion.size(); ++i) {
+    auto drone = sensor_fusion[i];
+    double drone_s = drone[5];
+
+    double drone_d = drone[6];
+    int drone_lane = (int) (drone_d / LANE_WIDTH);
+
+    if (drone_s + s_safe_delta < car_s || drone_lane != lane) { continue; } //skip cars behind
+
+    double distance = abs(drone_s - car_s); // this will be similar to drone too close ahead
+    if (distance < distance_in_lane) {
+      distance_in_lane = distance;
+    }
+
+  }
+
+  return 1 - exp(-30.0/distance_in_lane);
 }
 
 

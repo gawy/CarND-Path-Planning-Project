@@ -71,7 +71,7 @@ SCENARIO( "Car behavior", "[behavior]" ) {
 }
 
 
-TEST_CASE("Average speed", "[behavior]") {
+TEST_CASE("Average speed in lanes", "[behavior]") {
 
 
   SECTION("empty road") {
@@ -147,5 +147,43 @@ TEST_CASE("Cost based on speed", "[behavior]") {
 
     REQUIRE(Approx(cost).margin(0.01) == 0);
   }
+}
+
+
+TEST_CASE("Cost based on distance in lane", "[behavior]") {
+
+  SECTION("empty road") {
+    std::string s = "[]";//"[[1, 0,0, 10, 10, -20, 3],[2, 0.0, 0.0, 14.0, 15.0, 30, 2.5]]";
+    vector<vector<double>> j = nlohmann::json::parse(s);
+
+    double cost = costDistance(0, 0, j);
+
+    REQUIRE(Approx(cost).margin(0.05) == 0);
+  }
+
+  SECTION("slow car ahead") {
+    std::string s = "[[2, 0,0, 3, 4, 20, 2.0], [3, 0,0, 3, 4, 40, 2.0], [4, 0,0, 3, 4, 70, 9.0]]";
+    vector<vector<double>> j = nlohmann::json::parse(s);
+
+    double cost = costDistance(0, 0, j);
+
+    REQUIRE(Approx(cost).margin(0.02) == 0.776);
+    REQUIRE(Approx(costDistance(1, 0, j)).margin(0.01) == 0.03);
+
+    cost = costDistance(2, 0, j);
+    REQUIRE(Approx(cost).margin(0.01) == 0.34);
+  }
+
+  SECTION("car behind but close") {
+    std::string s = "[[2, 0,0, 3, 4, -2, 2.0], [3, 0,0, 3, 4, 100, 2.0], [4, 0,0, 3, 4, -8, 9.0]]";
+    vector<vector<double>> j = nlohmann::json::parse(s);
+
+    double cost = costDistance(0, 0, j);
+
+    REQUIRE(Approx(cost).margin(0.02) == 0.98);
+    REQUIRE(Approx(costDistance(2, 0, j)).margin(0.02) == 0.02);
+  }
+
+
 }
 
