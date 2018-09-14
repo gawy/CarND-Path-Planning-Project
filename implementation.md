@@ -4,7 +4,7 @@
 
 All behavior planning logic is distributed between main.cpp and planner.cpp.
 
-Video of the car running full track [https://youtu.be/0XWXdWdSofw](https://youtu.be/0XWXdWdSofw)
+Video of the car running full track [https://youtu.be/e4aPrb4mLV8](https://youtu.be/e4aPrb4mLV8)
 
 Key methods in planner.cpp are also covered with basic unit tests which greatly simplifies validation of written code
 (no need to run simulator each time and do painful debugging).
