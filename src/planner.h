@@ -6,6 +6,8 @@
 #define PATH_PLANNING_PLANNER_H
 
 #include <vector>
+#include <string>
+#include <map>
 
 using std::vector;
 
@@ -22,6 +24,8 @@ vector<vector<double>> planTrajectory(double car_x, double car_y, double car_yaw
                                       vector<double> &map_waypoints_s);
 
 vector<BhState> getNextStates(BhState current_state, int car_lane);
+std::map<int, double> getLaneAvgSpeed(vector<vector<double >> &sensor_fusion, double car_s);
+double costSpeed(int lane, double car_s, vector<vector<double >> &sensor_fusion);
 
 
 double distance(double x1, double y1, double x2, double y2);

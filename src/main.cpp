@@ -18,6 +18,10 @@ using json = nlohmann::json;
 // The max s value before wrapping around the track back to 0
 const double max_s = 6945.554;
 
+std::map<BhState, int> lane_direction = {{BhState::LCL, -1}, {BhState::LCR, 1}, {BhState::KL, 0}};
+
+
+void printState(BhState next_state);
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -48,7 +52,7 @@ int main() {
   // Waypoint map to read from
   string map_file_ = "../data/highway_map.csv";
 
-  int lane = 1; //starts from zero
+  int lane = 1; //starts from zero, 0 left lane
   double target_velocity = 0.0;
   BhState current_state = BhState::KL; //start with keep lane
 
@@ -111,7 +115,16 @@ int main() {
           double end_path_d = j[1]["end_path_d"];
 
           // Sensor Fusion Data, a list of all other cars on the same side of the road.
-          auto sensor_fusion = j[1]["sensor_fusion"];
+          vector<vector<double>> sensor_fusion = j[1]["sensor_fusion"];
+          cout << "Sensor fusion: ";
+          for (int k = 0; k <sensor_fusion.size(); ++k) {
+            vector<double> d = sensor_fusion[k];
+            double vx = d[3];
+            double vy = d[4];
+
+            cout << "{" << d[0] << ": s=" << (d[5]-car_s) << ", l=" << (int)(d[6]/LANE_WIDTH) << ", v=" << sqrt(vx*vx+vy*vy) << "}";
+          }
+          cout << endl;
 
           json msgJson;
 
@@ -139,12 +152,12 @@ int main() {
             if (drone_d > lane * LANE_WIDTH && drone_d < LANE_WIDTH * (lane + 1)) {
               //this car is in our lane
               double drone_s = (double)drone[5];
-              double drone_dist = abs(drone_s - car_s);
+              double drone_dist = drone_s - car_s;
               if (car_s < max_s - 2*safe_distance && drone_s < 2*safe_distance) {
                 drone_dist = drone_s + max_s - car_s;
               }
 
-              if (drone_dist < safe_distance && drone_dist < close_drone_distance) {
+              if (drone_s > car_s && drone_dist < safe_distance && drone_dist < close_drone_distance) {
                 drone_too_close = true;
                 close_drone_distance = drone_dist;
                 double drone_vx = drone[3];
@@ -152,32 +165,59 @@ int main() {
                 close_drone_velocity = sqrt(drone_vx*drone_vx + drone_vy*drone_vy);
                 std::cout << "Drone too close " << drone[0] << ", dist=" << drone_dist
                           << ", drone_s=" << (double)drone[5] << ", drone_d=" << drone_d << ", car_s=" << car_s
-                          << ", drone_v=" << close_drone_velocity << std::endl;
+                          << ", drone_v=" << close_drone_velocity
+                          << ", drone_lane=" << (int)(drone_d/LANE_WIDTH) << ", car_lane=" << lane << std::endl;
               }
             }
           }
 
+          BhState next_state = BhState::KL;
+
           if (drone_too_close && (close_drone_distance < safe_distance - 10 || target_velocity > close_drone_velocity)) {
             target_velocity -= .224;
             std::cout << "Dec velocity to: " << target_velocity << ", drone_v=" << close_drone_velocity << std::endl;
+
+//            if (lane > 0) { //TODO
+//              next_state = BhState::LCL;
+//            }
           } else if (target_velocity < IDEAL_VELOCITY) {
             target_velocity += .224;
             std::cout << "Inc velocity to: " << target_velocity << std::endl;
           }
 
           // simple behavior planner here to define strategy of the next steps
+
+          cout << "Current state=";
+          printState(current_state);
+          cout << ", lane=" << lane << ", costs: ";
+
           vector<BhState> next_states = getNextStates(current_state, lane);
+          vector<double> cost;
           for (auto bh_state : next_states) {
+            int new_lane = lane + lane_direction[bh_state];
             // generate trajectory
             // calculate cost of the trajectory
+            double c = costSpeed(new_lane, car_s, sensor_fusion) + 0.1 * abs(new_lane - lane);
+            cost.push_back(c);
+            cout << "";
+            printState(bh_state);
+            cout << "=" << c << ", ";
           }
+          cout << endl;
 
+          long state_index = std::distance(cost.begin(), std::min_element(cost.begin(), cost.end()));
+          next_state = next_states[state_index];
+          cout << "Next state: ";
+          printState(next_state);
+          cout << endl;
+
+          lane += lane_direction[next_state]; //execute lane change on state change
+          current_state = next_state;
 
           auto next = planTrajectory(car_x, car_y, car_yaw, lane, target_velocity, prev_x, prev_y, map_waypoints_x, map_waypoints_y,
                                      map_waypoints_s);
 
 
-          // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           msgJson["next_x"] = next[0];
           msgJson["next_y"] = next[1];
 
@@ -227,6 +267,14 @@ int main() {
     return -1;
   }
   h.run();
+}
+
+void printState(BhState next_state) {
+  switch (next_state) {
+    case BhState::KL: cout << "KL"; break;
+    case BhState::LCL: cout << "LCL"; break;
+    case BhState::LCR: cout << "LCR"; break;
+  }
 }
 
 

@@ -10,6 +10,19 @@
 
 using namespace std;
 
+//enumeration types (both scoped and unscoped) can have overloaded operators
+std::ostream& operator<<(std::ostream& os, BhState s)
+{
+  switch(s)
+  {
+    case BhState::KL   : os << "KL";    break;
+    case BhState::LCL: os << "LCL"; break;
+    case BhState::LCR : os << "LCR";  break;
+    default    : os.setstate(std::ios_base::failbit);
+  }
+  return os;
+}
+
 // Returns list of states that are possible for current state
 // This is essentially a definition of finite state machine
 vector<BhState> getNextStates(const BhState current_state, int car_lane) {
@@ -33,6 +46,53 @@ vector<BhState> getNextStates(const BhState current_state, int car_lane) {
   }
 
   return states;
+}
+
+// Return average lane speed based on the sensor fusion data
+// Function will take all cars ahead of car_s from sensor fusion array and will average their speed in each lane.
+//
+map<int, double> getLaneAvgSpeed(vector<vector<double >> &sensor_fusion, double car_s) {
+  map<int, double> lane_average;
+  map<int, int> lane_cnt;
+
+  for (int i = 0; i < sensor_fusion.size(); ++i) {
+    auto drone = sensor_fusion[i];
+    double drone_s = drone[5];
+    if (drone_s < car_s) { continue; }
+
+    double drone_d = drone[6];
+    int drone_lane = (int) (drone_d / LANE_WIDTH);
+
+    double drone_vx = drone[3];
+    double drone_vy = drone[4];
+    double drone_velocity = sqrt(drone_vx*drone_vx + drone_vy*drone_vy);
+
+    if (lane_average.find(drone_lane) == lane_average.end()) {
+      lane_average[drone_lane] = drone_velocity;
+      lane_cnt[drone_lane] = 1;
+    } else {
+      lane_average[drone_lane] += drone_velocity;
+      lane_cnt[drone_lane] += 1;
+    }
+  }
+
+  cout << "Lane average speed: ";
+  for(auto k : lane_average) {
+    lane_average[k.first] /= lane_cnt[k.first];
+    cout << "{"<< k.first << "=" << lane_average[k.first] << "}";
+  }
+  cout << endl;
+
+  return lane_average;
+}
+
+// Calculate cost of going to specific lane based speed
+double costSpeed(int lane, double car_s, vector<vector<double >> &sensor_fusion) {
+  map<int, double> avg_speed = getLaneAvgSpeed(sensor_fusion, car_s);
+
+  double speed_delta = avg_speed[lane] ? IDEAL_VELOCITY - avg_speed[lane]: 0.0;
+
+  return 1 - exp(-2*speed_delta/IDEAL_VELOCITY);
 }
 
 
